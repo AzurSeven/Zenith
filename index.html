@@ -9,7 +9,8 @@
 <!-- Firebase SDK -->
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged,
+         createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import { getFirestore, doc, getDoc, setDoc, onSnapshot }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
@@ -31,7 +32,8 @@ const provider = new GoogleAuthProvider();
 
 // ── Expose to global scope so legacy JS can call them ──
 window._fb = { auth, db, provider, doc, getDoc, setDoc, onSnapshot,
-               signInWithPopup, signOut, onAuthStateChanged };
+               signInWithPopup, signOut, onAuthStateChanged,
+               createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile };
 
 // ── Auth state watcher ──
 onAuthStateChanged(auth, async (user) => {
@@ -721,7 +723,7 @@ label { font-size: 12px; color: var(--text2); display: block; margin-bottom: 6px
   <div class="login-logo"><span>ZENITH</span></div>
   <div class="login-tagline">Ta progression, partout</div>
   <div class="login-card">
-    <div class="login-card-title">Connexion</div>
+    <div class="login-card-title" id="login-card-title">Connexion</div>
     <button class="btn-google" onclick="signInWithGoogle()">
       <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
         <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
@@ -732,9 +734,27 @@ label { font-size: 12px; color: var(--text2); display: block; margin-bottom: 6px
       Continuer avec Google
     </button>
     <div class="login-divider">ou</div>
-    <button class="btn" style="width:100%;background:var(--surface3);color:var(--text2);font-size:13px;" onclick="signInAnonymouslyApp()">
-      Continuer sans compte
-    </button>
+    <!-- Email form (hidden by default) -->
+    <div id="email-form" style="display:none;">
+      <div id="email-form-name-group" style="display:none;margin-bottom:10px;">
+        <input type="text" id="login-name" placeholder="Ton prénom" style="margin-bottom:0;">
+      </div>
+      <input type="email" id="login-email" placeholder="Email" style="margin-bottom:10px;">
+      <input type="password" id="login-password" placeholder="Mot de passe" style="margin-bottom:10px;">
+      <div id="login-email-error" style="display:none;color:var(--red);font-size:12px;margin-bottom:8px;text-align:center;"></div>
+      <button class="btn btn-accent" style="width:100%;margin-bottom:8px;" id="email-submit-btn" onclick="submitEmailAuth()">Se connecter</button>
+      <div style="text-align:center;font-size:13px;color:var(--text2);">
+        <span id="email-toggle-text">Pas encore de compte ?</span>
+        <button onclick="toggleEmailMode()" style="background:none;border:none;color:var(--accent2);font-size:13px;cursor:pointer;padding:0 4px;font-family:var(--font-body);" id="email-toggle-btn">Créer un compte</button>
+      </div>
+      <button onclick="hideEmailForm()" style="width:100%;margin-top:10px;background:none;border:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:var(--font-body);">← Retour</button>
+    </div>
+    <!-- Show email form button -->
+    <div id="email-form-trigger">
+      <button class="btn" style="width:100%;background:var(--surface3);color:var(--text2);font-size:13px;" onclick="showEmailForm()">
+        ✉️ Utiliser un email
+      </button>
+    </div>
     <div id="login-loading">
       <div class="spinner"></div>
       <div style="font-size:13px;color:var(--text2);">Connexion en cours...</div>
@@ -1470,14 +1490,71 @@ window.signInWithGoogle = async function() {
 };
 
 window.signInAnonymouslyApp = function() {
-  // Just hide login, use localStorage only
-  document.getElementById('login-screen').style.display = 'none';
-  document.getElementById('app').style.display = 'flex';
-  window._fbUser = null;
-  loadState();
-  if (!state.tracker) state.tracker = { goals: { water:2000, steps:10000, sleep:8, calories:2200, weight:null }, daily:{} };
-  renderHome();
-  renderProfile();
+  // Kept for compatibility but no longer used
+};
+
+let _emailMode = 'login'; // 'login' | 'register'
+
+window.showEmailForm = function() {
+  document.getElementById('email-form').style.display = 'block';
+  document.getElementById('email-form-trigger').style.display = 'none';
+  document.getElementById('login-email-error').style.display = 'none';
+  _emailMode = 'login';
+  document.getElementById('login-card-title').textContent = 'Connexion';
+  document.getElementById('email-submit-btn').textContent = 'Se connecter';
+  document.getElementById('email-toggle-text').textContent = 'Pas encore de compte ?';
+  document.getElementById('email-toggle-btn').textContent = 'Créer un compte';
+  document.getElementById('email-form-name-group').style.display = 'none';
+};
+
+window.hideEmailForm = function() {
+  document.getElementById('email-form').style.display = 'none';
+  document.getElementById('email-form-trigger').style.display = 'block';
+  document.getElementById('login-email-error').style.display = 'none';
+};
+
+window.toggleEmailMode = function() {
+  _emailMode = _emailMode === 'login' ? 'register' : 'login';
+  const isReg = _emailMode === 'register';
+  document.getElementById('login-card-title').textContent = isReg ? 'Créer un compte' : 'Connexion';
+  document.getElementById('email-submit-btn').textContent = isReg ? 'Créer mon compte' : 'Se connecter';
+  document.getElementById('email-toggle-text').textContent = isReg ? 'Déjà un compte ?' : 'Pas encore de compte ?';
+  document.getElementById('email-toggle-btn').textContent = isReg ? 'Se connecter' : 'Créer un compte';
+  document.getElementById('email-form-name-group').style.display = isReg ? 'block' : 'none';
+  document.getElementById('login-email-error').style.display = 'none';
+};
+
+window.submitEmailAuth = async function() {
+  const email = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  const errorEl = document.getElementById('login-email-error');
+  errorEl.style.display = 'none';
+  if (!email || !password) { errorEl.textContent = 'Remplis tous les champs.'; errorEl.style.display = 'block'; return; }
+  if (password.length < 6) { errorEl.textContent = 'Le mot de passe doit faire au moins 6 caractères.'; errorEl.style.display = 'block'; return; }
+  document.getElementById('login-loading').style.display = 'flex';
+  const fb = window._fb;
+  try {
+    if (_emailMode === 'register') {
+      const cred = await fb.createUserWithEmailAndPassword(fb.auth, email, password);
+      const name = document.getElementById('login-name').value.trim();
+      if (name) await fb.updateProfile(cred.user, { displayName: name });
+    } else {
+      await fb.signInWithEmailAndPassword(fb.auth, email, password);
+    }
+  } catch(e) {
+    document.getElementById('login-loading').style.display = 'none';
+    const msgs = {
+      'auth/email-already-in-use': 'Cet email est déjà utilisé.',
+      'auth/invalid-email': 'Adresse email invalide.',
+      'auth/wrong-password': 'Mot de passe incorrect.',
+      'auth/user-not-found': 'Aucun compte avec cet email.',
+      'auth/invalid-credential': 'Email ou mot de passe incorrect.',
+      'auth/too-many-requests': 'Trop de tentatives, réessaie plus tard.',
+      'auth/weak-password': 'Mot de passe trop faible (6 caractères min).'
+    };
+    errorEl.textContent = msgs[e.code] || ('Erreur : ' + (e.message || e.code));
+    errorEl.style.display = 'block';
+  }
 };
 
 window.logOut = async function() {
@@ -2920,9 +2997,11 @@ async function executeDeleteAllData() {
     } catch(e) { console.warn('Firestore delete failed:', e); }
   }
   closeModal('delete-data-modal');
-  renderHome();
-  renderProfile();
   showToast('Données supprimées ✓');
+  // Déconnexion après suppression
+  setTimeout(async () => {
+    if (fb) await fb.signOut(fb.auth);
+  }, 800);
 }
 
 function saveMaxLoad() {
