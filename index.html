@@ -6,8 +6,6 @@
 <title>Zenith</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
-<link rel="icon" type="image/png" href="/favicon.png?v=1">
-<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <!-- Firebase SDK -->
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
@@ -803,12 +801,13 @@ label { font-size: 12px; color: var(--text2); display: block; margin-bottom: 6px
   <div class="page-header">
     <div class="flex-between">
       <h1>SÉANCES</h1>
-      <button class="btn btn-accent btn-sm" onclick="openNewSession()">+ Nouvelle</button>
+      <button class="btn btn-accent btn-sm" onclick="openNewSession()">+ Nouvelle séance</button>
     </div>
     <p>Gère tes programmes</p>
   </div>
 
-  <div class="tabs mt-12" id="sessions-tabs">
+  <div style="height:12px;"></div>
+  <div class="tabs" id="sessions-tabs">
     <div class="tab-btn active" onclick="switchSessionTab('sessions',this)">Séances</div>
     <div class="tab-btn" onclick="switchSessionTab('blocks',this)">Blocs</div>
   </div>
@@ -838,12 +837,14 @@ label { font-size: 12px; color: var(--text2); display: block; margin-bottom: 6px
   
   <div class="card">
     <div class="flex-between" style="margin-bottom:12px;">
-      <button class="icon-btn" onclick="prevMonth()">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M15 18l-6-6 6-6"/></svg>
+      <button class="btn btn-ghost btn-sm" onclick="prevMonth()" style="display:flex;align-items:center;gap:4px;padding:8px 12px;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="16" height="16"><path d="M15 18l-6-6 6-6"/></svg>
+        Préc.
       </button>
       <div style="font-weight:700;" id="cal-month-title"></div>
-      <button class="icon-btn" onclick="nextMonth()">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
+      <button class="btn btn-ghost btn-sm" onclick="nextMonth()" style="display:flex;align-items:center;gap:4px;padding:8px 12px;">
+        Suiv.
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="16" height="16"><path d="M9 18l6-6-6-6"/></svg>
       </button>
     </div>
     <div class="calendar-grid" id="main-calendar"></div>
@@ -906,6 +907,15 @@ label { font-size: 12px; color: var(--text2); display: block; margin-bottom: 6px
     <p style="font-size:12px;color:var(--text2);margin-bottom:14px;">Renseigne tes 1RM pour activer le calcul de charge par RPE</p>
     <div id="max-loads-list"></div>
     <button class="btn btn-ghost btn-full mt-12" onclick="openAddMaxLoad()">+ Ajouter un exercice</button>
+  </div>
+
+  <!-- Danger zone -->
+  <div class="card" style="margin-top:12px;border-color:rgba(255,71,87,0.25);">
+    <div class="card-title" style="color:var(--red);">ZONE DANGER</div>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:14px;line-height:1.6;">Supprime toutes tes données : séances, historique, tracker, 1RM et profil.<br><strong style="color:var(--red);">⚠ Cette action est irréversible.</strong></p>
+    <button class="btn btn-danger btn-full" onclick="openDeleteDataConfirm()">
+      🗑 Supprimer toutes mes données
+    </button>
   </div>
 
   <div style="height:16px;"></div>
@@ -1047,13 +1057,21 @@ label { font-size: 12px; color: var(--text2); display: block; margin-bottom: 6px
 <div class="modal-overlay" id="exercise-picker-modal">
   <div class="modal">
     <div class="modal-handle"></div>
-    <div class="modal-title">AJOUTER EXERCICE</div>
+    <div class="modal-title" id="ep-modal-title">AJOUTER EXERCICE</div>
     <div class="form-group">
       <label>Nom de l'exercice</label>
-      <input type="text" id="ep-name" placeholder="ex: Squat, Bench Press...">
+      <input type="text" id="ep-name" placeholder="ex: Squat, Bench Press..." oninput="onEpNameInput()">
     </div>
-    <div class="card-title" style="margin-bottom:8px;">SUGGESTIONS</div>
-    <div id="exercise-suggestions" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px;"></div>
+    <!-- Suggestions — only shown if exercises exist in sessions -->
+    <div id="ep-suggestions-section" style="display:none;margin-bottom:14px;">
+      <div class="card-title" style="margin-bottom:8px;">EXERCICES EXISTANTS</div>
+      <div id="exercise-suggestions" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
+    </div>
+    <!-- Last used charge info -->
+    <div id="ep-last-charge-banner" style="display:none;background:rgba(124,111,255,0.1);border:1px solid rgba(124,111,255,0.3);border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:14px;">
+      <div style="font-size:11px;color:var(--text2);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px;">Dernière séance</div>
+      <div id="ep-last-charge-text" style="font-size:13px;color:var(--text);"></div>
+    </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
       <div class="form-group">
         <label>Séries</label>
@@ -1063,6 +1081,16 @@ label { font-size: 12px; color: var(--text2); display: block; margin-bottom: 6px
         <label>Reps</label>
         <input type="text" id="ep-reps" value="8-10" placeholder="ex: 8-10, 5, AMRAP">
       </div>
+    </div>
+    <!-- Intensité -->
+    <div class="form-group">
+      <label>Intensité</label>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+        <button type="button" class="rpe-btn" id="ep-intensity-auto-btn" style="width:auto;padding:0 12px;flex:1;" onclick="setIntensityAuto()">En fonction de la semaine</button>
+        <button type="button" class="rpe-btn" id="ep-intensity-manual-btn" style="width:auto;padding:0 12px;flex:1;" onclick="setIntensityManual()">Valeur libre</button>
+      </div>
+      <input type="text" id="ep-intensity" placeholder="ex: 70%, RPE 8, 80kg..." style="display:none;">
+      <div id="ep-intensity-auto-hint" style="font-size:12px;color:var(--text2);font-style:italic;">La charge sera calculée selon le RPE de la semaine du bloc.</div>
     </div>
     <div class="form-group">
       <label>Temps de repos (secondes)</label>
@@ -1079,13 +1107,20 @@ label { font-size: 12px; color: var(--text2); display: block; margin-bottom: 6px
       <label>Notes (optionnel)</label>
       <input type="text" id="ep-notes" placeholder="Tempo, technique...">
     </div>
-    <div class="form-group">
-      <label><input type="checkbox" id="ep-rpe-tracked" style="width:auto;margin-right:8px;">Calculer charge par RPE</label>
-      <div class="hint">Active si tu as renseigné ton 1RM pour cet exercice</div>
+    <div class="form-group" style="background:var(--surface2);border-radius:var(--radius-sm);padding:12px;">
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:8px;">
+        <label style="margin:0;display:flex;align-items:center;gap:6px;cursor:pointer;">
+          <input type="checkbox" id="ep-rpe-tracked" style="width:auto;">
+          <span>Calculer charge par 1RM (RPE)</span>
+        </label>
+      </div>
+      <button type="button" class="btn btn-ghost btn-sm btn-full" id="ep-last-session-btn" onclick="fillLastSessionCharge()" style="display:none;font-size:12px;">
+        📋 Charge de la séance précédente
+      </button>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px;">
-      <button class="btn btn-ghost" onclick="closeModal('exercise-picker-modal')">Annuler</button>
-      <button class="btn btn-accent" onclick="confirmAddExercise()">Ajouter</button>
+      <button class="btn btn-ghost" onclick="closeExercisePicker()">Annuler</button>
+      <button class="btn btn-accent" id="ep-confirm-btn" onclick="confirmAddExercise()">Ajouter</button>
     </div>
   </div>
 </div>
@@ -1114,6 +1149,32 @@ label { font-size: 12px; color: var(--text2); display: block; margin-bottom: 6px
   </div>
 </div>
 
+<!-- Delete Data Confirmation Modal -->
+<div class="modal-overlay" id="delete-data-modal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div style="text-align:center;margin-bottom:16px;">
+      <div style="font-size:40px;margin-bottom:8px;">⚠️</div>
+      <div class="modal-title" style="color:var(--red);">SUPPRESSION TOTALE</div>
+    </div>
+    <div style="background:rgba(255,71,87,0.08);border:1px solid rgba(255,71,87,0.25);border-radius:var(--radius-sm);padding:14px;margin-bottom:20px;">
+      <p style="font-size:14px;color:var(--text);line-height:1.7;text-align:center;">
+        Tu es sur le point de supprimer <strong>toutes tes données</strong> :<br>
+        séances, historique d'entraînement, tracker, 1RM et profil.<br><br>
+        <span style="color:var(--red);font-weight:700;">Cette action est irréversible et définitive.</span>
+      </p>
+    </div>
+    <div class="form-group">
+      <label>Tape <strong style="color:var(--red);">SUPPRIMER</strong> pour confirmer</label>
+      <input type="text" id="delete-confirm-input" placeholder="SUPPRIMER" oninput="checkDeleteConfirm()">
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px;">
+      <button class="btn btn-ghost" onclick="closeModal('delete-data-modal')">Annuler</button>
+      <button class="btn btn-danger" id="delete-confirm-btn" disabled onclick="executeDeleteAllData()" style="opacity:0.4;transition:opacity .2s;">Supprimer tout</button>
+    </div>
+  </div>
+</div>
+
 <!-- Add Max Load Modal -->
 <div class="modal-overlay" id="maxload-modal">
   <div class="modal">
@@ -1122,6 +1183,10 @@ label { font-size: 12px; color: var(--text2); display: block; margin-bottom: 6px
     <div class="form-group">
       <label>Exercice</label>
       <input type="text" id="ml-exo" placeholder="ex: Squat Barre">
+    </div>
+    <div id="ml-session-exercises-section" style="margin-bottom:14px;display:none;">
+      <div class="card-title" style="margin-bottom:8px;">EXERCICES DE TES SÉANCES</div>
+      <div id="ml-session-exercises" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
     </div>
     <div class="form-group">
       <label>Charge maximale (kg)</label>
@@ -1586,6 +1651,13 @@ function renderHistory() {
   const now = new Date();
   if(!historyCalYear) historyCalYear = now.getFullYear();
   if(!historyCalMonth) historyCalMonth = now.getMonth();
+  // Auto-select today if nothing selected yet
+  if(!selectedHistoryDate) {
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+    selectedHistoryDate = todayStr;
+    const months = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+    document.getElementById('history-selected-date-str').textContent = `${now.getDate()} ${months[now.getMonth()]} ${now.getFullYear()}`;
+  }
   renderMainCalendar();
   renderHistoryDay(selectedHistoryDate);
 }
@@ -1749,11 +1821,14 @@ function renderSessionExercises() {
   list.innerHTML = editingSessionExercises.map((ex, i) => `
     <div class="exercise-block" style="margin-bottom:8px;">
       <div class="exercise-header" style="cursor:default;">
-        <div>
+        <div style="flex:1;min-width:0;">
           <div class="exercise-name">${ex.name}</div>
-          <div class="exercise-meta">${ex.sets}×${ex.reps} · repos ${ex.restTime||90}s · ${ex.rpeTracked?'<span style="color:var(--accent2);">RPE</span>':'poids libre'}</div>
+          <div class="exercise-meta">${ex.sets}×${ex.reps} · repos ${ex.restTime||90}s${ex.intensity && ex.intensity !== 'auto' ? ' · ' + ex.intensity : ''}${ex.rpeTracked?' · <span style="color:var(--accent2);">RPE</span>':''}</div>
         </div>
-        <div style="display:flex;gap:6px;">
+        <div style="display:flex;gap:6px;flex-shrink:0;">
+          <button class="icon-btn" title="Modifier" onclick="editExercise(${i})">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          </button>
           <button class="icon-btn" onclick="duplicateExercise(${i})">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
           </button>
@@ -1766,12 +1841,78 @@ function renderSessionExercises() {
   `).join('');
 }
 
-const EXERCISE_SUGGESTIONS = [
-  'Squat Barre','Deadlift','Bench Press','OHP','Rowing Barre',
-  'Squat Gobelet','Hip Thrust','Lunges','RDL','Curl Barre',
-  'Dips','Pull-ups','Leg Press','Développé Incliné','Curl Haltères',
-  'Face Pull','Lat Pulldown','Tricep Pushdown','Leg Curl','Leg Extension'
-];
+let _epEditIdx = null; // null = add new, number = edit existing
+
+function getExercisesFromSessions() {
+  const names = new Set();
+  state.sessions.forEach(s => (s.exercises||[]).forEach(e => names.add(e.name)));
+  return [...names].sort();
+}
+
+function getLastChargeForExercise(name) {
+  // Find most recent history entry with this exercise
+  const sorted = [...state.history].sort((a,b) => (b.date||'').localeCompare(a.date||''));
+  for (const h of sorted) {
+    const ex = (h.exercises||[]).find(e => e.name?.toLowerCase() === name.toLowerCase());
+    if (ex) {
+      const doneSets = (ex.sets||[]).filter(s => s.done && s.kg);
+      if (doneSets.length) {
+        const sets = doneSets.map(s => `${s.reps}×${s.kg}kg`).join(', ');
+        return { date: h.date, sets };
+      }
+    }
+  }
+  return null;
+}
+
+function onEpNameInput() {
+  const name = document.getElementById('ep-name').value.trim().toLowerCase();
+  if (!name) { updateLastChargeBanner(''); return; }
+  updateLastChargeBanner(name);
+}
+
+function updateLastChargeBanner(nameLower) {
+  const btn = document.getElementById('ep-last-session-btn');
+  const banner = document.getElementById('ep-last-charge-banner');
+  const bannerText = document.getElementById('ep-last-charge-text');
+  if (!nameLower) { btn.style.display = 'none'; banner.style.display = 'none'; return; }
+  const last = getLastChargeForExercise(nameLower);
+  if (last) {
+    banner.style.display = 'block';
+    bannerText.textContent = `${formatDate(last.date)} : ${last.sets}`;
+    btn.style.display = 'block';
+  } else {
+    banner.style.display = 'none';
+    btn.style.display = 'none';
+  }
+}
+
+function fillLastSessionCharge() {
+  const name = document.getElementById('ep-name').value.trim();
+  const last = getLastChargeForExercise(name);
+  if (!last) return;
+  // Try to fill in first set's kg into intensity
+  const firstMatch = last.sets.match(/[\d.,]+kg/);
+  if (firstMatch) {
+    document.getElementById('ep-intensity').value = firstMatch[0];
+    setIntensityManual();
+  }
+  showToast(`Charge précédente : ${last.sets}`);
+}
+
+function setIntensityAuto() {
+  document.getElementById('ep-intensity-auto-btn').classList.add('selected');
+  document.getElementById('ep-intensity-manual-btn').classList.remove('selected');
+  document.getElementById('ep-intensity').style.display = 'none';
+  document.getElementById('ep-intensity-auto-hint').style.display = 'block';
+}
+
+function setIntensityManual() {
+  document.getElementById('ep-intensity-manual-btn').classList.add('selected');
+  document.getElementById('ep-intensity-auto-btn').classList.remove('selected');
+  document.getElementById('ep-intensity').style.display = 'block';
+  document.getElementById('ep-intensity-auto-hint').style.display = 'none';
+}
 
 function setRestPreset(val) {
   document.getElementById('ep-rest').value = val;
@@ -1785,39 +1926,86 @@ function setRestPreset(val) {
 }
 
 function openExercisePicker(editIdx) {
-  document.getElementById('ep-name').value = '';
-  document.getElementById('ep-sets').value = 4;
-  document.getElementById('ep-reps').value = '8-10';
-  document.getElementById('ep-notes').value = '';
-  document.getElementById('ep-rpe-tracked').checked = false;
-  document.getElementById('ep-rest').value = 90;
-  // Reset presets
+  _epEditIdx = (editIdx !== undefined) ? editIdx : null;
+  const isEdit = _epEditIdx !== null;
+  const ex = isEdit ? editingSessionExercises[_epEditIdx] : null;
+
+  document.getElementById('ep-modal-title').textContent = isEdit ? 'MODIFIER EXERCICE' : 'AJOUTER EXERCICE';
+  document.getElementById('ep-confirm-btn').textContent = isEdit ? 'Enregistrer' : 'Ajouter';
+  document.getElementById('ep-name').value = ex?.name || '';
+  document.getElementById('ep-sets').value = ex?.sets || 4;
+  document.getElementById('ep-reps').value = ex?.reps || '8-10';
+  document.getElementById('ep-notes').value = ex?.notes || '';
+  document.getElementById('ep-rpe-tracked').checked = ex?.rpeTracked || false;
+  document.getElementById('ep-rest').value = ex?.restTime || 90;
+  document.getElementById('ep-intensity').value = (ex?.intensity && ex.intensity !== 'auto') ? ex.intensity : '';
+  document.getElementById('ep-last-charge-banner').style.display = 'none';
+  document.getElementById('ep-last-session-btn').style.display = 'none';
+
+  // Intensity mode
+  const intensityIsAuto = !ex || !ex.intensity || ex.intensity === 'auto';
+  if (intensityIsAuto) setIntensityAuto(); else setIntensityManual();
+
+  // Reset rest presets
   document.querySelectorAll('#ep-rest-presets .rpe-btn').forEach(b => {
     b.classList.toggle('selected', b.textContent === '1m30');
   });
-  
-  const sugg = document.getElementById('exercise-suggestions');
-  sugg.innerHTML = EXERCISE_SUGGESTIONS.map(e => 
-    `<div class="chip" style="cursor:pointer;" onclick="document.getElementById('ep-name').value='${e}'">${e}</div>`
-  ).join('');
+
+  // Suggestions — only exercises already in sessions (excluding current editing)
+  const sessionExos = getExercisesFromSessions();
+  const suggSection = document.getElementById('ep-suggestions-section');
+  const suggContainer = document.getElementById('exercise-suggestions');
+  if (sessionExos.length) {
+    suggSection.style.display = 'block';
+    suggContainer.innerHTML = sessionExos.map(e =>
+      `<div class="chip" style="cursor:pointer;" onclick="selectSuggestion('${e.replace(/'/g,"\\'")}')">
+        ${e}
+       </div>`
+    ).join('');
+  } else {
+    suggSection.style.display = 'none';
+  }
+
+  // Show last charge if editing
+  if (isEdit && ex?.name) updateLastChargeBanner(ex.name.toLowerCase());
+
   openModal('exercise-picker-modal');
+}
+
+function selectSuggestion(name) {
+  document.getElementById('ep-name').value = name;
+  updateLastChargeBanner(name.toLowerCase());
+}
+
+function closeExercisePicker() {
+  closeModal('exercise-picker-modal');
+  _epEditIdx = null;
 }
 
 function confirmAddExercise() {
   const name = document.getElementById('ep-name').value.trim();
   if(!name) { showToast('Entre un nom d\'exercice'); return; }
-  editingSessionExercises.push({
-    name, 
+  const isManualIntensity = document.getElementById('ep-intensity-manual-btn').classList.contains('selected');
+  const intensityVal = isManualIntensity ? (document.getElementById('ep-intensity').value.trim() || '') : 'auto';
+  const exercise = {
+    name,
     sets: parseInt(document.getElementById('ep-sets').value) || 4,
     reps: document.getElementById('ep-reps').value || '8',
     notes: document.getElementById('ep-notes').value,
     rpeTracked: document.getElementById('ep-rpe-tracked').checked,
-    restTime: parseInt(document.getElementById('ep-rest').value) || 90
-  });
-  closeModal('exercise-picker-modal');
+    restTime: parseInt(document.getElementById('ep-rest').value) || 90,
+    intensity: intensityVal
+  };
+  if (_epEditIdx !== null) {
+    editingSessionExercises[_epEditIdx] = exercise;
+  } else {
+    editingSessionExercises.push(exercise);
+  }
+  closeExercisePicker();
   renderSessionExercises();
 }
 
+function editExercise(i) { openExercisePicker(i); }
 function removeExercise(i) { editingSessionExercises.splice(i, 1); renderSessionExercises(); }
 function duplicateExercise(i) { editingSessionExercises.push({...editingSessionExercises[i]}); renderSessionExercises(); }
 
@@ -2656,7 +2844,56 @@ function renderMaxLoads() {
 function openAddMaxLoad() {
   document.getElementById('ml-exo').value = '';
   document.getElementById('ml-kg').value = '';
+  // Show exercises from sessions
+  const sessionExos = getExercisesFromSessions();
+  const section = document.getElementById('ml-session-exercises-section');
+  const container = document.getElementById('ml-session-exercises');
+  if (sessionExos.length) {
+    section.style.display = 'block';
+    container.innerHTML = sessionExos.map(e =>
+      `<div class="chip" style="cursor:pointer;" onclick="document.getElementById('ml-exo').value='${e.replace(/'/g,"\\'")}'">${e}</div>`
+    ).join('');
+  } else {
+    section.style.display = 'block';
+    container.innerHTML = '<div style="color:var(--text3);font-size:12px;font-style:italic;">Crée d\'abord des séances avec des exercices pour les voir ici.</div>';
+  }
   openModal('maxload-modal');
+}
+
+function openDeleteDataConfirm() {
+  document.getElementById('delete-confirm-input').value = '';
+  document.getElementById('delete-confirm-btn').disabled = true;
+  document.getElementById('delete-confirm-btn').style.opacity = '0.4';
+  openModal('delete-data-modal');
+}
+
+function checkDeleteConfirm() {
+  const val = document.getElementById('delete-confirm-input').value;
+  const ok = val === 'SUPPRIMER';
+  document.getElementById('delete-confirm-btn').disabled = !ok;
+  document.getElementById('delete-confirm-btn').style.opacity = ok ? '1' : '0.4';
+}
+
+async function executeDeleteAllData() {
+  // Reset state
+  state = {
+    profile: { name:'', weight:'', maxLoads:[] },
+    sessions: [], blocks: [], history: [], activeWorkout: null,
+    tracker: { goals: { water:2000, steps:10000, sleep:8, calories:2200, weight:null }, daily:{} }
+  };
+  localStorage.removeItem('forza_state');
+  // Delete from Firestore if connected
+  const fb = window._fb;
+  const user = window._fbUser;
+  if (fb && user) {
+    try {
+      await fb.setDoc(fb.doc(fb.db, 'users', user.uid), { state, updatedAt: Date.now() });
+    } catch(e) { console.warn('Firestore delete failed:', e); }
+  }
+  closeModal('delete-data-modal');
+  renderHome();
+  renderProfile();
+  showToast('Données supprimées ✓');
 }
 
 function saveMaxLoad() {
