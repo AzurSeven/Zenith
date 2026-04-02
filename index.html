@@ -1560,12 +1560,8 @@ window.submitEmailAuth = async function() {
 window.logOut = async function() {
   const fb = window._fb;
   if (fb) await fb.signOut(fb.auth);
-  state = {
-    profile: { name:'', weight:'', maxLoads:[] },
-    sessions: [], blocks: [], history: [], activeWorkout: null,
-    tracker: { goals: { water:2000, steps:10000, sleep:8, calories:2200, weight:null }, daily:{} }
-  };
   localStorage.removeItem('forza_state');
+  window.location.reload();
 };
 
 
@@ -3001,6 +2997,7 @@ async function executeDeleteAllData() {
   // Déconnexion après suppression
   setTimeout(async () => {
     if (fb) await fb.signOut(fb.auth);
+    window.location.reload();
   }, 800);
 }
 
