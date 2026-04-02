@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>ForzaTrack</title>
+<title>Zenith</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <!-- Firebase SDK -->
@@ -43,6 +43,10 @@ onAuthStateChanged(auth, async (user) => {
     document.getElementById('profile-avatar-letter').textContent = user.displayName?.[0]?.toUpperCase() || 'A';
     document.getElementById('profile-google-name').textContent = user.displayName || '';
     document.getElementById('profile-google-email').textContent = user.email || '';
+    // Auto-set name from Google if not already set by user
+    if (!state.profile.name && user.displayName) {
+      state.profile.name = user.displayName.split(' ')[0];
+    }
     if (user.photoURL) {
       document.getElementById('profile-avatar-img').src = user.photoURL;
       document.getElementById('profile-avatar-img').style.display = 'block';
@@ -622,7 +626,6 @@ label { font-size: 12px; color: var(--text2); display: block; margin-bottom: 6px
   display: flex; align-items: center; justify-content: center;
   box-shadow: 0 0 20px rgba(232,255,71,0.5), 0 4px 16px rgba(0,0,0,0.4);
   transition: all .2s;
-  border: 3px solid var(--bg);
 }
 .nav-home-center:active .nav-home-pill { transform: scale(0.92); background: #d4eb30; }
 .nav-home-center.active .nav-home-pill { box-shadow: 0 0 28px rgba(232,255,71,0.7), 0 4px 16px rgba(0,0,0,0.4); }
@@ -715,7 +718,7 @@ label { font-size: 12px; color: var(--text2); display: block; margin-bottom: 6px
     <div class="login-deco-circle" style="width:600px;height:600px;top:-200px;left:-200px;"></div>
     <div class="login-deco-circle" style="width:300px;height:300px;bottom:-50px;right:-80px;"></div>
   </div>
-  <div class="login-logo">FORZA<span>TRACK</span></div>
+  <div class="login-logo"><span>ZENITH</span></div>
   <div class="login-tagline">Ta progression, partout</div>
   <div class="login-card">
     <div class="login-card-title">Connexion</div>
@@ -750,7 +753,8 @@ label { font-size: 12px; color: var(--text2); display: block; margin-bottom: 6px
 <div class="page active" id="page-home">
   <div class="greeting-bar">
     <div>
-      <div class="greeting">BONJOUR, <span id="user-name-greet">ATHLÈTE</span></div>
+      <div class="greeting"><span style="color:var(--accent);">ZENITH</span></div>
+      <div class="greeting" style="font-size:24px;">BONJOUR, <span id="user-name-greet">ATHLÈTE</span></div>
       <div style="font-size:14px;color:var(--text2);margin-top:6px;font-weight:500;" id="home-date-str"></div>
     </div>
     <div id="streak-badge" class="badge badge-accent">🔥 <span id="streak-count">0</span>j</div>
@@ -1449,7 +1453,7 @@ function closeModal(id) { document.getElementById(id).classList.remove('open'); 
 let calCurrentDate = new Date();
 function renderHome() {
   // Greeting
-  const name = state.profile.name || 'ATHLÈTE';
+  const name = state.profile.name || window._fbUser?.displayName?.split(' ')[0] || 'ATHLÈTE';
   document.getElementById('user-name-greet').textContent = name.toUpperCase();
   
   const days = ['Dimanche','Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi'];
@@ -2584,8 +2588,9 @@ function addRestTime(delta) {
 function renderProfile() {
   document.getElementById('pf-name').value = state.profile.name || '';
   document.getElementById('pf-weight').value = state.profile.weight || '';
-  document.getElementById('profile-name-display').textContent = state.profile.name || 'Athlète';
-  document.getElementById('profile-avatar-letter').textContent = (state.profile.name || 'A')[0].toUpperCase();
+  const displayName = state.profile.name || window._fbUser?.displayName?.split(' ')[0] || 'Athlète';
+  document.getElementById('profile-name-display').textContent = displayName;
+  document.getElementById('profile-avatar-letter').textContent = displayName[0].toUpperCase();
   document.getElementById('profile-subtitle').textContent = state.profile.weight ? `${state.profile.weight} kg` : 'Renseigne ton profil';
 
   // Google account info
@@ -2618,9 +2623,9 @@ function renderProfile() {
 function saveProfile() {
   state.profile.name = document.getElementById('pf-name').value;
   state.profile.weight = document.getElementById('pf-weight').value;
-  document.getElementById('user-name-greet').textContent = (state.profile.name || 'ATHLÈTE').toUpperCase();
-  document.getElementById('profile-name-display').textContent = state.profile.name || 'Athlète';
-  document.getElementById('profile-avatar-letter').textContent = (state.profile.name || 'A')[0].toUpperCase();
+  document.getElementById('user-name-greet').textContent = (state.profile.name || window._fbUser?.displayName?.split(' ')[0] || 'ATHLÈTE').toUpperCase();
+  document.getElementById('profile-name-display').textContent = state.profile.name || window._fbUser?.displayName?.split(' ')[0] || 'Athlète';
+  document.getElementById('profile-avatar-letter').textContent = (state.profile.name || window._fbUser?.displayName || 'A')[0].toUpperCase();
   saveState();
 }
 
