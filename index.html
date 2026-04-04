@@ -58,9 +58,12 @@ onAuthStateChanged(auth, async (user) => {
     await window.loadStateFromFirestore();
     // Re-init timers
     if (state.activeWorkout) {
-      const elapsed = Math.floor((Date.now() - state.activeWorkout.startTime) / 1000);
-      workoutTimerSeconds = elapsed;
+      // Restaurer l'état pause depuis Firestore
+      workoutPaused = state.activeWorkout.paused || false;
+      clearInterval(workoutTimerInterval);
       workoutTimerInterval = setInterval(tickWorkoutTimer, 1000);
+      // Affichage immédiat sans attendre 1 seconde
+      tickWorkoutTimer();
       document.getElementById('active-session-home').style.display = 'block';
       const s = state.sessions.find(x => x.id === state.activeWorkout.sessionId);
       if(s) document.getElementById('home-session-name').textContent = s.name;
@@ -2275,11 +2278,22 @@ function deleteBlock(id) {
 
 // ===== ACTIVE WORKOUT =====
 let workoutTimerInterval = null;
-let workoutTimerSeconds = 0;
 let workoutPaused = false;
 let restTimerInterval = null;
 let restSecondsLeft = 0;
 let restTotalSeconds = 0;
+
+// ── Calcul du temps écoulé réel (résistant au verrouillage écran) ──
+// On ne compte plus les secondes avec un compteur incrémental,
+// on calcule toujours depuis startTime - pausedMs sauvegardés en Firestore.
+function getElapsedSeconds() {
+  if (!state.activeWorkout) return 0;
+  const aw = state.activeWorkout;
+  if (aw.paused && aw.pauseStart) {
+    return Math.floor((aw.pauseStart - aw.startTime - (aw.pausedMs || 0)) / 1000);
+  }
+  return Math.floor((Date.now() - aw.startTime - (aw.pausedMs || 0)) / 1000);
+}
 
 function startWorkout(sessionId) {
   const s = state.sessions.find(x => x.id === sessionId);
@@ -2296,12 +2310,11 @@ function startWorkout(sessionId) {
   });
   
   state.activeWorkout = {
-    sessionId, startTime: Date.now(), paused: false, pausedMs: 0,
+    sessionId, startTime: Date.now(), paused: false, pausedMs: 0, pauseStart: null,
     sets
   };
   saveState();
   
-  workoutTimerSeconds = 0;
   workoutPaused = false;
   clearInterval(workoutTimerInterval);
   workoutTimerInterval = setInterval(tickWorkoutTimer, 1000);
@@ -2443,21 +2456,40 @@ function addSet(ei) {
 }
 
 function tickWorkoutTimer() {
-  if(!workoutPaused) {
-    workoutTimerSeconds++;
-    const display = formatDuration(workoutTimerSeconds);
-    document.getElementById('workout-timer').textContent = display;
-    const homeTimer = document.getElementById('home-timer');
-    if(homeTimer) homeTimer.textContent = display;
-  }
+  const elapsed = getElapsedSeconds();
+  const display = formatDuration(elapsed);
+  const t1 = document.getElementById('workout-timer');
+  if (t1) t1.textContent = display;
+  const t2 = document.getElementById('home-timer');
+  if (t2) t2.textContent = display;
 }
 
 function togglePause() {
-  workoutPaused = !workoutPaused;
+  if (!state.activeWorkout) return;
+  const aw = state.activeWorkout;
+
+  if (!aw.paused) {
+    // → Mise en pause : on enregistre l'instant de début de pause
+    aw.paused = true;
+    aw.pauseStart = Date.now();
+    workoutPaused = true;
+  } else {
+    // → Reprise : on accumule la durée de cette pause dans pausedMs
+    const pauseDuration = Date.now() - (aw.pauseStart || Date.now());
+    aw.pausedMs = (aw.pausedMs || 0) + pauseDuration;
+    aw.paused = false;
+    aw.pauseStart = null;
+    workoutPaused = false;
+  }
+  saveState();
+
   const btn = document.getElementById('pause-btn');
-  btn.innerHTML = workoutPaused ? 
-    `<svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><polygon points="5 3 19 12 5 21 5 3"/></svg>` :
-    `<svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`;
+  btn.innerHTML = aw.paused
+    ? `<svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><polygon points="5 3 19 12 5 21 5 3"/></svg>`
+    : `<svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`;
+
+  // Mise à jour immédiate de l'affichage
+  tickWorkoutTimer();
 }
 
 function minimizeWorkout() { document.getElementById('active-workout-overlay').classList.remove('open'); }
@@ -2469,7 +2501,6 @@ function cancelWorkoutConfirm() {
   document.getElementById('cancel-confirm-bar').style.display = 'none';
   clearInterval(workoutTimerInterval);
   clearInterval(restTimerInterval);
-  workoutTimerSeconds = 0;
   workoutPaused = false;
   state.activeWorkout = null;
   saveState();
@@ -2485,6 +2516,10 @@ function cancelWorkoutAbort() {
 function finishWorkout() {
   if(!state.activeWorkout) return;
   const s = state.sessions.find(x => x.id === state.activeWorkout.sessionId);
+
+  // Calculer la durée réelle depuis les timestamps
+  const finalDuration = getElapsedSeconds();
+
   clearInterval(workoutTimerInterval);
   clearInterval(restTimerInterval);
   document.getElementById('rest-overlay').classList.remove('open');
@@ -2523,7 +2558,7 @@ function finishWorkout() {
     sessionId: state.activeWorkout.sessionId,
     sessionName: s?.name || 'Séance',
     exercises: exercisesData,
-    duration: workoutTimerSeconds,
+    duration: finalDuration,
     totalKg: totalKg,
     prs: newPRs
   });
@@ -2534,8 +2569,7 @@ function finishWorkout() {
   document.getElementById('active-workout-overlay').classList.remove('open');
   
   // Show summary
-  showSummary(s?.name, workoutTimerSeconds, totalKg, totalSets, newPRs, exercisesData);
-  workoutTimerSeconds = 0;
+  showSummary(s?.name, finalDuration, totalKg, totalSets, newPRs, exercisesData);
 }
 
 function getWeightComparison(kg) {
@@ -3066,15 +3100,28 @@ setTimeout(() => {
   }
 }, 3000);
 
-// Restore active workout timer if exists
+// Restore active workout timer if exists (fallback local)
 if(state.activeWorkout) {
-  const elapsed = Math.floor((Date.now() - state.activeWorkout.startTime) / 1000);
-  workoutTimerSeconds = elapsed;
+  workoutPaused = state.activeWorkout.paused || false;
+  clearInterval(workoutTimerInterval);
   workoutTimerInterval = setInterval(tickWorkoutTimer, 1000);
+  tickWorkoutTimer(); // affichage immédiat
   document.getElementById('active-session-home').style.display = 'block';
   const s = state.sessions.find(x => x.id === state.activeWorkout.sessionId);
   if(s) document.getElementById('home-session-name').textContent = s.name;
 }
+
+// ── Resynchronisation du chrono au retour d'écran verrouillé ──
+// Quand le navigateur reprend (déverrouillage, retour onglet),
+// on force une mise à jour immédiate car setInterval était suspendu.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && state.activeWorkout) {
+    // Si on était "en pause forcée" par le système (ex: verrouillage écran),
+    // mais que l'utilisateur n'avait PAS mis en pause manuellement,
+    // on resynchronise simplement l'affichage.
+    tickWorkoutTimer();
+  }
+});
 
 </script>
 </body>
