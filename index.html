@@ -1036,14 +1036,15 @@ label { font-size: 12px; color: var(--text2); display: block; margin-bottom: 6px
 
 <!-- ===== REST TIMER OVERLAY ===== -->
 <div class="rest-timer-overlay" id="rest-overlay">
-  <div style="color:var(--text2);font-size:13px;text-transform:uppercase;letter-spacing:1px;">REPOS</div>
+  <div style="color:var(--text2);font-size:13px;text-transform:uppercase;letter-spacing:1px;" id="rest-overlay-label">REPOS</div>
   <div class="rest-circle">
     <svg viewBox="0 0 200 200" id="rest-svg">
       <circle cx="100" cy="100" r="90" id="rest-progress" stroke-dasharray="565" stroke-dashoffset="0"/>
     </svg>
     <div class="rest-time" id="rest-time-display">90</div>
   </div>
-  <div style="color:var(--text2);font-size:13px;">secondes restantes</div>
+  <div style="color:var(--text2);font-size:13px;" id="rest-overlay-sublabel">secondes restantes</div>
+  <div id="rest-emom-info" style="display:none;background:rgba(232,255,71,0.08);border:1px solid rgba(232,255,71,0.2);border-radius:8px;padding:8px 16px;font-size:13px;color:var(--accent);text-align:center;"></div>
   <div style="display:flex;gap:12px;margin-top:8px;">
     <button class="btn btn-ghost" onclick="addRestTime(15)">+15s</button>
     <button class="btn btn-accent" onclick="skipRest()">PASSER</button>
@@ -1125,6 +1126,26 @@ label { font-size: 12px; color: var(--text2); display: block; margin-bottom: 6px
         <button type="button" class="rpe-btn" style="width:auto;padding:0 12px;" onclick="setRestPreset(180)">3min</button>
       </div>
       <input type="number" id="ep-rest" value="90" min="0" max="600" style="margin-top:8px;" placeholder="ou entre une valeur en secondes">
+    </div>
+    <!-- EMOM -->
+    <div class="form-group">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <div>
+          <label style="margin-bottom:2px;font-size:13px;font-weight:600;color:var(--text);">Mode EMOM</label>
+          <div style="font-size:11px;color:var(--text2);">Every Minute On the Minute</div>
+        </div>
+        <button type="button" id="ep-emom-toggle" onclick="toggleEmomMode()"
+          style="width:48px;height:26px;border-radius:13px;background:var(--surface3);border:2px solid var(--border);cursor:pointer;position:relative;transition:all .25s;flex-shrink:0;">
+          <span id="ep-emom-knob" style="position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:var(--text3);transition:all .25s;display:block;"></span>
+        </button>
+      </div>
+      <div id="ep-emom-config" style="display:none;background:rgba(232,255,71,0.06);border:1px solid rgba(232,255,71,0.2);border-radius:var(--radius-sm);padding:12px;">
+        <div style="font-size:12px;color:var(--text2);margin-bottom:10px;">L'exercice durera <b id="ep-emom-preview">10 minutes</b> — chaque minute démarre une nouvelle série.</div>
+        <div class="form-group" style="margin-bottom:0;">
+          <label>Durée totale du EMOM (minutes)</label>
+          <input type="number" id="ep-emom-duration" value="10" min="1" max="60" oninput="updateEmomPreview()">
+        </div>
+      </div>
     </div>
     <div class="form-group">
       <label>Notes (optionnel)</label>
@@ -2045,6 +2066,13 @@ function openExercisePicker(editIdx) {
   document.getElementById('ep-last-charge-banner').style.display = 'none';
   document.getElementById('ep-last-session-btn').style.display = 'none';
 
+  // EMOM state
+  resetEmomUI();
+  if (ex?.isEmom) {
+    document.getElementById('ep-emom-duration').value = ex.emomDuration || 10;
+    toggleEmomMode(); // active = true
+  }
+
   // Intensity mode
   const intensityIsAuto = !ex || !ex.intensity || ex.intensity === 'auto';
   if (intensityIsAuto) setIntensityAuto(); else setIntensityManual();
@@ -2092,6 +2120,7 @@ function confirmAddExercise() {
   const intensityVal = isManualIntensity ? (document.getElementById('ep-intensity').value.trim() || '') : 'auto';
   const rpeEl = document.getElementById('ep-rpe-tracked');
   const rpeTracked = rpeEl.type === 'hidden' ? rpeEl.value === 'true' : rpeEl.checked;
+  const isEmom = document.getElementById('ep-emom-toggle').dataset.active === 'true';
   const exercise = {
     name,
     sets: parseInt(document.getElementById('ep-sets').value) || 4,
@@ -2099,7 +2128,9 @@ function confirmAddExercise() {
     notes: document.getElementById('ep-notes').value,
     rpeTracked,
     restTime: parseInt(document.getElementById('ep-rest').value) || 90,
-    intensity: intensityVal
+    intensity: intensityVal,
+    isEmom,
+    emomDuration: isEmom ? (parseInt(document.getElementById('ep-emom-duration').value) || 10) : null
   };
   if (_epEditIdx !== null) {
     editingSessionExercises[_epEditIdx] = exercise;
@@ -2113,6 +2144,53 @@ function confirmAddExercise() {
 function editExercise(i) { openExercisePicker(i); }
 function removeExercise(i) { editingSessionExercises.splice(i, 1); renderSessionExercises(); }
 function duplicateExercise(i) { editingSessionExercises.push({...editingSessionExercises[i]}); renderSessionExercises(); }
+
+// ── EMOM picker helpers ──────────────────────────────────────
+function toggleEmomMode() {
+  const toggle = document.getElementById('ep-emom-toggle');
+  const knob   = document.getElementById('ep-emom-knob');
+  const config = document.getElementById('ep-emom-config');
+  const restSection = document.getElementById('ep-rest').closest('.form-group');
+  const isOn = toggle.dataset.active === 'true';
+
+  if (isOn) {
+    toggle.dataset.active = 'false';
+    toggle.style.background = 'var(--surface3)';
+    toggle.style.borderColor = 'var(--border)';
+    knob.style.left = '2px';
+    knob.style.background = 'var(--text3)';
+    config.style.display = 'none';
+    // Remettre la section repos visible
+    document.getElementById('ep-rest-presets').closest('.form-group').style.display = '';
+  } else {
+    toggle.dataset.active = 'true';
+    toggle.style.background = 'var(--accent)';
+    toggle.style.borderColor = 'var(--accent)';
+    knob.style.left = '22px';
+    knob.style.background = '#000';
+    config.style.display = 'block';
+    // Cacher la section repos (EMOM gère le timing)
+    document.getElementById('ep-rest-presets').closest('.form-group').style.display = 'none';
+    updateEmomPreview();
+  }
+}
+
+function updateEmomPreview() {
+  const min = parseInt(document.getElementById('ep-emom-duration').value) || 10;
+  document.getElementById('ep-emom-preview').textContent = `${min} minute${min > 1 ? 's' : ''}`;
+}
+
+function resetEmomUI() {
+  const toggle = document.getElementById('ep-emom-toggle');
+  const knob   = document.getElementById('ep-emom-knob');
+  toggle.dataset.active = 'false';
+  toggle.style.background = 'var(--surface3)';
+  toggle.style.borderColor = 'var(--border)';
+  knob.style.left = '2px';
+  knob.style.background = 'var(--text3)';
+  document.getElementById('ep-emom-config').style.display = 'none';
+  document.getElementById('ep-rest-presets').closest('.form-group').style.display = '';
+}
 
 function saveSession() {
   const name = document.getElementById('sm-name').value.trim();
@@ -2306,7 +2384,9 @@ function startWorkout(sessionId) {
   // Build sets structure
   const sets = {};
   s.exercises.forEach((ex, ei) => {
-    sets[ei] = Array.from({length: ex.sets}, () => ({ reps: ex.reps, kg: '', done: false }));
+    // Pour un EMOM, on crée autant de "sets" que de minutes
+    const count = ex.isEmom ? (ex.emomDuration || 10) : (ex.sets || 4);
+    sets[ei] = Array.from({length: count}, () => ({ reps: ex.reps, kg: '', done: false }));
   });
   
   state.activeWorkout = {
@@ -2318,6 +2398,7 @@ function startWorkout(sessionId) {
   workoutPaused = false;
   clearInterval(workoutTimerInterval);
   workoutTimerInterval = setInterval(tickWorkoutTimer, 1000);
+  requestNotificationPermission();
   
   openActiveWorkout(s);
 }
@@ -2347,7 +2428,53 @@ function renderWorkoutBody(s) {
     const prevSets = getPreviousSets(ex.name);
     const restSec = ex.restTime || 90;
     const restLabel = restSec >= 60 ? `${Math.floor(restSec/60)}min${restSec%60?restSec%60+'s':''}` : `${restSec}s`;
-    
+
+    // EMOM
+    if (ex.isEmom) {
+      const totalMin = ex.emomDuration || 10;
+      const doneSets = setsData.filter(s => s.done).length;
+      const totalSets = setsData.length;
+      const emomFinished = aw.emomDone?.[ei];
+      return `
+      <div class="exercise-block" style="margin-bottom:12px;${emomFinished?'opacity:.6':''}">
+        <div class="exercise-header" style="cursor:default;padding-bottom:8px;">
+          <div>
+            <div class="exercise-name">${ex.name}</div>
+            <div class="exercise-meta" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:3px;">
+              <span style="color:var(--accent);">⚡ EMOM ${totalMin}min</span>
+              <span style="color:var(--text3);">${ex.reps} reps / min</span>
+            </div>
+          </div>
+          <div class="badge badge-accent">EMOM</div>
+        </div>
+        <div style="padding:0 16px 14px;">
+          ${emomFinished ? `
+            <div style="text-align:center;padding:12px;color:var(--green);font-weight:600;">✓ EMOM terminé — ${doneSets} séries complétées</div>
+          ` : `
+            <div style="background:var(--surface3);border-radius:var(--radius-sm);padding:12px;margin-bottom:10px;font-size:13px;color:var(--text2);text-align:center;">
+              Série <b style="color:var(--text)">${doneSets + 1}</b> / ${totalSets} · Reste <b style="color:var(--accent)">${totalMin - doneSets} min</b>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
+              <input class="set-input" type="number"
+                value="${setsData[doneSets]?.reps || ex.reps}"
+                placeholder="${ex.reps}"
+                oninput="updateSet(${ei},${doneSets},'reps',this.value)"
+                style="text-align:center;" id="emom-reps-${ei}">
+              <input class="set-input" type="number"
+                value="${setsData[doneSets]?.kg || ''}"
+                placeholder="kg"
+                oninput="updateSet(${ei},${doneSets},'kg',this.value)"
+                style="text-align:center;" id="emom-kg-${ei}">
+            </div>
+            <button class="btn btn-accent btn-full" onclick="emomSetDone(${ei})">
+              ✓ Série ${doneSets + 1} terminée — lancer 1 min
+            </button>
+          `}
+        </div>
+      </div>`;
+    }
+
+    // Normal
     return `
     <div class="exercise-block" style="margin-bottom:12px;">
       <div class="exercise-header" style="cursor:default;padding-bottom:8px;">
@@ -2430,6 +2557,34 @@ function getPreviousSets(exoName) {
 function updateSet(ei, si, field, val) {
   state.activeWorkout.sets[ei][si][field] = val;
   saveState();
+}
+
+// ── EMOM : valider une série et lancer le compte à rebours 1 min ──
+function emomSetDone(ei) {
+  const s = state.sessions.find(x => x.id === state.activeWorkout.sessionId);
+  const ex = s?.exercises?.[ei];
+  if (!ex) return;
+  const aw = state.activeWorkout;
+  const totalMin = ex.emomDuration || 10;
+  const doneSets = aw.sets[ei].filter(s => s.done).length;
+
+  // Marquer la série courante comme faite
+  if (aw.sets[ei][doneSets]) aw.sets[ei][doneSets].done = true;
+  saveState();
+
+  const nextDone = aw.sets[ei].filter(s => s.done).length;
+  if (nextDone >= totalMin) {
+    // EMOM terminé
+    if (!aw.emomDone) aw.emomDone = {};
+    aw.emomDone[ei] = true;
+    saveState();
+    renderWorkoutBody(s);
+    showToast(`🎯 EMOM ${ex.name} terminé !`);
+  } else {
+    // Lancer exactement 60 secondes (1 minute EMOM)
+    renderWorkoutBody(s);
+    startRestTimer(60, { isEmom: true, exName: ex.name, currentSet: nextDone, totalSets: totalMin });
+  }
 }
 
 function toggleSetDone(ei, si) {
@@ -2873,19 +3028,110 @@ function saveTrackerGoals() {
 }
 
 // ===== REST TIMER =====
-function startRestTimer(seconds) {
+// ── Contexte audio (créé une fois pour éviter les blocages mobile) ──
+let _audioCtx = null;
+function getAudioCtx() {
+  if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return _audioCtx;
+}
+
+function playBeep(freq = 880, duration = 0.15, volume = 0.6, delay = 0) {
+  try {
+    const ctx = getAudioCtx();
+    const osc  = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(volume, ctx.currentTime + delay);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + duration);
+    osc.start(ctx.currentTime + delay);
+    osc.stop(ctx.currentTime + delay + duration + 0.05);
+  } catch(e) { /* audio non dispo */ }
+}
+
+// Demander la permission notifications au premier lancement séance
+function requestNotificationPermission() {
+  if ('Notification' in window && Notification.permission === 'default') {
+    Notification.requestPermission();
+  }
+}
+
+function sendNotification(title, body, silent = false) {
+  if ('Notification' in window && Notification.permission === 'granted') {
+    new Notification(title, { body, icon: '/favicon.ico', silent });
+  }
+}
+
+// Flags pour n'envoyer les alertes qu'une fois par seuil
+let _halfSent = false;
+let _tenSent  = false;
+
+function startRestTimer(seconds, emomContext = null) {
   clearInterval(restTimerInterval);
   restTotalSeconds = seconds;
   restEndTime = Date.now() + seconds * 1000;
+  _halfSent = false;
+  _tenSent  = false;
+
+  // Label overlay
+  const labelEl    = document.getElementById('rest-overlay-label');
+  const sublabelEl = document.getElementById('rest-overlay-sublabel');
+  const emomInfo   = document.getElementById('rest-emom-info');
+  if (emomContext?.isEmom) {
+    labelEl.textContent = 'EMOM — PROCHAINE SÉRIE';
+    sublabelEl.textContent = `${emomContext.exName} · Série ${emomContext.currentSet + 1} / ${emomContext.totalSets}`;
+    emomInfo.style.display = 'block';
+    emomInfo.textContent = `Prépare-toi pour la série ${emomContext.currentSet + 1}`;
+  } else {
+    labelEl.textContent = 'REPOS';
+    sublabelEl.textContent = 'secondes restantes';
+    emomInfo.style.display = 'none';
+  }
+
   updateRestDisplay();
   document.getElementById('rest-overlay').classList.add('open');
-  // Tick toutes les 500ms : plus réactif au retour après verrouillage écran
+  requestNotificationPermission();
+
   restTimerInterval = setInterval(() => {
     const left = Math.ceil((restEndTime - Date.now()) / 1000);
+
+    // ── Moitié du temps ──────────────────────────────
+    if (!_halfSent && left <= Math.floor(restTotalSeconds / 2) && left > 0) {
+      _halfSent = true;
+      playBeep(660, 0.12, 0.4); // bip discret
+      sendNotification(
+        emomContext?.isEmom ? '⚡ EMOM' : '⏱ Mi-repos',
+        `Il reste ${left}s${emomContext ? ` — prépare-toi pour la série ${emomContext.currentSet + 1}` : ''}`,
+        true
+      );
+    }
+
+    // ── 10 secondes restantes ────────────────────────
+    if (!_tenSent && left <= 10 && left > 0) {
+      _tenSent = true;
+      // Double bip
+      playBeep(880, 0.12, 0.5);
+      playBeep(880, 0.12, 0.5, 0.22);
+      sendNotification(
+        emomContext?.isEmom ? '⚡ EMOM — 10s !' : '⏱ 10 secondes !',
+        emomContext ? `Prêt pour la série ${emomContext.currentSet + 1} !` : 'Le repos se termine dans 10 secondes',
+        false
+      );
+    }
+
     if (left <= 0) {
       clearInterval(restTimerInterval);
       document.getElementById('rest-overlay').classList.remove('open');
-      if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+      // ── Fin du repos : vibration + 1 bip fort ───────
+      if (navigator.vibrate) navigator.vibrate([300, 100, 300]);
+      playBeep(1047, 0.3, 0.8); // Do5 — bip de fin
+      sendNotification(
+        emomContext?.isEmom ? '🔥 C\'est parti !' : '💪 Repos terminé !',
+        emomContext ? `${emomContext.exName} — Série ${emomContext.currentSet + 1} !` : 'Reprends ta série',
+        false
+      );
     } else {
       updateRestDisplay();
     }
@@ -3130,12 +3376,20 @@ document.addEventListener('visibilitychange', () => {
         clearInterval(restTimerInterval);
         document.getElementById('rest-overlay').classList.remove('open');
         if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+        playBeep(1047, 0.3, 0.8);
       } else {
         updateRestDisplay();
       }
     }
   }
 });
+
+// ── Déverrouiller l'AudioContext au premier tap (requis iOS/Safari) ──
+document.addEventListener('touchstart', () => {
+  if (_audioCtx && _audioCtx.state === 'suspended') {
+    _audioCtx.resume();
+  }
+}, { once: false, passive: true });
 
 </script>
 </body>
