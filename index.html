@@ -1461,10 +1461,13 @@ window.loadStateFromFirestore = async function() {
       const data = snap.data();
       state = data.state || state;
       if (!state.tracker) state.tracker = { goals: { water:2000, steps:10000, sleep:8, calories:2200, weight:null }, daily:{} };
-      // Also cache locally for offline
       localStorage.setItem('forza_state', JSON.stringify(state));
-    }
-    isFirestoreLoaded = true; // <-- LIGNE AJOUTÉE ICI
+    } else {
+      // SI LA BASE A ÉTÉ VIDÉE : on pousse les données locales pour recréer le document
+      await fb.setDoc(ref, { state, updatedAt: Date.now() });
+    }
+    // On valide que le chargement/création est terminé
+    isFirestoreLoaded = true; 
   } catch(e) {
     console.warn('Firestore load failed, using local:', e);
   }
@@ -1473,23 +1476,27 @@ window.loadStateFromFirestore = async function() {
 function saveState() {
   // Always write to localStorage immediately
   localStorage.setItem('forza_state', JSON.stringify(state));
-  // Debounce Firestore writes (avoid hammering on rapid input)
+
+  // SÉCURITÉ : Si Firestore n'est pas encore prêt, on bloque direct (et on n'affiche pas l'icône de chargement)
+  if (!isFirestoreLoaded) return;
+
+  // Debounce Firestore writes
   if (_saveTimeout) clearTimeout(_saveTimeout);
-  showSaveIndicator(false);
+  showSaveIndicator(false); // Affiche "Sauvegarde..."
+  
   _saveTimeout = setTimeout(async () => {
     const fb = window._fb;
     const user = window._fbUser;
-    
-    // <-- MODIFICATION SUR LA LIGNE CI-DESSOUS (ajout de !isFirestoreLoaded)
-    if (!fb || !user || !isFirestoreLoaded) return; 
+    if (!fb || !user) return; 
 
     try {
       const ref = fb.doc(fb.db, 'users', user.uid);
-      // <-- MODIFICATION SUR LA LIGNE CI-DESSOUS (ajout de merge: true)
       await fb.setDoc(ref, { state, updatedAt: Date.now() }, { merge: true });
-      showSaveIndicator(true);
+      showSaveIndicator(true); // Affiche "Sauvegardé ✓"
     } catch(e) {
       console.warn('Firestore save failed:', e);
+      // Cache l'icône en cas d'erreur de connexion
+      document.getElementById('save-indicator').classList.remove('show');
     }
   }, 1200);
 }
