@@ -1440,7 +1440,6 @@ let state = {
 
 // ===== FIREBASE STATE =====
 let _saveTimeout = null;
-window.isFirestoreLoaded = false;      
 
 function loadState() {
   // Local fallback only — real load is async via loadStateFromFirestore()
@@ -1451,84 +1450,40 @@ function loadState() {
 }
 
 window.loadStateFromFirestore = async function() {
-  console.log("🔄 1. Début du chargement Firestore...");
   const fb = window._fb;
   const user = window._fbUser;
-
-  if (!fb || !user) {
-      console.warn("⚠️ Variables fb ou user manquantes, abandon.");
-      return;
-  }
-
+  if (!fb || !user) return;
   try {
-    console.log(`📡 2. Requête envoyée pour récupérer les données de l'utilisateur : ${user.uid}`);
     const ref = fb.doc(fb.db, 'users', user.uid);
-    
-    // C'est généralement ici que Firebase peut bloquer
-    const snap = await fb.getDoc(ref); 
-    
-    console.log("📥 3. Réponse reçue ! Le document existe-t-il ?", snap.exists());
-
+    const snap = await fb.getDoc(ref);
     if (snap.exists()) {
       const data = snap.data();
       state = data.state || state;
       if (!state.tracker) state.tracker = { goals: { water:2000, steps:10000, sleep:8, calories:2200, weight:null }, daily:{} };
+      // Also cache locally for offline
       localStorage.setItem('forza_state', JSON.stringify(state));
-      console.log("✅ 4. Données appliquées depuis Firestore avec succès.");
-    } else {
-      console.log("⚠️ 4. Document introuvable, création d'une base vide par défaut...");
-      await fb.setDoc(ref, { state, updatedAt: Date.now() });
-      console.log("✅ 5. Base par défaut créée.");
     }
-
-    // DÉVERROUILLAGE DES SAUVEGARDES
-    window.isFirestoreLoaded = true; 
-    console.log("🔓 SAUVEGARDE DÉBLOQUÉE !");
-// Exécuter la sauvegarde en attente si besoin
-if (window._pendingSave) {
-  console.log("🔁 Sauvegarde en attente détectée, envoi...");
-  scheduleSaveToFirestore();
-}
-
   } catch(e) {
-    console.error('❌ Erreur critique au chargement Firestore :', e);
-    // On débloque quand même pour ne pas bloquer l'appli si tu es hors-ligne
-    window.isFirestoreLoaded = true; 
+    console.warn('Firestore load failed, using local:', e);
   }
 };
 
 function saveState() {
-  // Sauvegarde locale immédiate (toujours)
+  // Always write to localStorage immediately
   localStorage.setItem('forza_state', JSON.stringify(state));
-
-  // Si Firestore n'est pas prêt, on réessaie dès qu'il le sera
-  if (!window.isFirestoreLoaded) {
-    console.warn("⏳ Firestore pas prêt, sauvegarde mise en attente...");
-    window._pendingSave = true;
-    return;
-  }
-
-  scheduleSaveToFirestore();
-}
-
-function scheduleSaveToFirestore() {
+  // Debounce Firestore writes (avoid hammering on rapid input)
   if (_saveTimeout) clearTimeout(_saveTimeout);
   showSaveIndicator(false);
-
   _saveTimeout = setTimeout(async () => {
     const fb = window._fb;
     const user = window._fbUser;
     if (!fb || !user) return;
-
     try {
       const ref = fb.doc(fb.db, 'users', user.uid);
-      await fb.setDoc(ref, { state, updatedAt: Date.now() }, { merge: true });
+      await fb.setDoc(ref, { state, updatedAt: Date.now() });
       showSaveIndicator(true);
-      window._pendingSave = false;
     } catch(e) {
-      console.error('❌ Firestore save failed:', e);
-      document.getElementById('save-indicator').classList.remove('show');
-      showToast('Échec de la sauvegarde Cloud');
+      console.warn('Firestore save failed:', e);
     }
   }, 1200);
 }
