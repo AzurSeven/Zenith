@@ -1484,6 +1484,11 @@ window.loadStateFromFirestore = async function() {
     // DÉVERROUILLAGE DES SAUVEGARDES
     window.isFirestoreLoaded = true; 
     console.log("🔓 SAUVEGARDE DÉBLOQUÉE !");
+// Exécuter la sauvegarde en attente si besoin
+if (window._pendingSave) {
+  console.log("🔁 Sauvegarde en attente détectée, envoi...");
+  scheduleSaveToFirestore();
+}
 
   } catch(e) {
     console.error('❌ Erreur critique au chargement Firestore :', e);
@@ -1493,33 +1498,39 @@ window.loadStateFromFirestore = async function() {
 };
 
 function saveState() {
-  // Sauvegarde locale immédiate
-  localStorage.setItem('forza_state', JSON.stringify(state));
+  // Sauvegarde locale immédiate (toujours)
+  localStorage.setItem('forza_state', JSON.stringify(state));
 
-  // SÉCURITÉ : Si Firestore n'est pas prêt, on bloque l'envoi au serveur
+  // Si Firestore n'est pas prêt, on réessaie dès qu'il le sera
   if (!window.isFirestoreLoaded) {
-    console.warn("⏳ Sauvegarde bloquée : Firestore n'est pas encore prêt.");
+    console.warn("⏳ Firestore pas prêt, sauvegarde mise en attente...");
+    window._pendingSave = true;
     return;
   }
 
-  if (_saveTimeout) clearTimeout(_saveTimeout);
-  showSaveIndicator(false); // Affiche l'icône qui tourne
-  
-  _saveTimeout = setTimeout(async () => {
-    const fb = window._fb;
-    const user = window._fbUser;
-    if (!fb || !user) return; 
+  scheduleSaveToFirestore();
+}
 
-    try {
-      const ref = fb.doc(fb.db, 'users', user.uid);
-      await fb.setDoc(ref, { state, updatedAt: Date.now() }, { merge: true });
-      showSaveIndicator(true); // Affiche le succès vert
-    } catch(e) {
-      console.error('❌ Firestore save failed:', e);
+function scheduleSaveToFirestore() {
+  if (_saveTimeout) clearTimeout(_saveTimeout);
+  showSaveIndicator(false);
+
+  _saveTimeout = setTimeout(async () => {
+    const fb = window._fb;
+    const user = window._fbUser;
+    if (!fb || !user) return;
+
+    try {
+      const ref = fb.doc(fb.db, 'users', user.uid);
+      await fb.setDoc(ref, { state, updatedAt: Date.now() }, { merge: true });
+      showSaveIndicator(true);
+      window._pendingSave = false;
+    } catch(e) {
+      console.error('❌ Firestore save failed:', e);
       document.getElementById('save-indicator').classList.remove('show');
       showToast('Échec de la sauvegarde Cloud');
-    }
-  }, 1200);
+    }
+  }, 1200);
 }
 
 function showSaveIndicator(saved) {
