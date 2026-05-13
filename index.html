@@ -1440,6 +1440,7 @@ let state = {
 
 // ===== FIREBASE STATE =====
 let _saveTimeout = null;
+let isFirestoreLoaded = false;      
 
 function loadState() {
   // Local fallback only — real load is async via loadStateFromFirestore()
@@ -1450,42 +1451,47 @@ function loadState() {
 }
 
 window.loadStateFromFirestore = async function() {
-  const fb = window._fb;
-  const user = window._fbUser;
-  if (!fb || !user) return;
-  try {
-    const ref = fb.doc(fb.db, 'users', user.uid);
-    const snap = await fb.getDoc(ref);
-    if (snap.exists()) {
-      const data = snap.data();
-      state = data.state || state;
-      if (!state.tracker) state.tracker = { goals: { water:2000, steps:10000, sleep:8, calories:2200, weight:null }, daily:{} };
-      // Also cache locally for offline
-      localStorage.setItem('forza_state', JSON.stringify(state));
-    }
-  } catch(e) {
-    console.warn('Firestore load failed, using local:', e);
-  }
+  const fb = window._fb;
+  const user = window._fbUser;
+  if (!fb || !user) return;
+  try {
+    const ref = fb.doc(fb.db, 'users', user.uid);
+    const snap = await fb.getDoc(ref);
+    if (snap.exists()) {
+      const data = snap.data();
+      state = data.state || state;
+      if (!state.tracker) state.tracker = { goals: { water:2000, steps:10000, sleep:8, calories:2200, weight:null }, daily:{} };
+      // Also cache locally for offline
+      localStorage.setItem('forza_state', JSON.stringify(state));
+    }
+    isFirestoreLoaded = true; // <-- LIGNE AJOUTÉE ICI
+  } catch(e) {
+    console.warn('Firestore load failed, using local:', e);
+  }
 };
 
 function saveState() {
-  // Always write to localStorage immediately
-  localStorage.setItem('forza_state', JSON.stringify(state));
-  // Debounce Firestore writes (avoid hammering on rapid input)
-  if (_saveTimeout) clearTimeout(_saveTimeout);
-  showSaveIndicator(false);
-  _saveTimeout = setTimeout(async () => {
-    const fb = window._fb;
-    const user = window._fbUser;
-    if (!fb || !user) return;
-    try {
-      const ref = fb.doc(fb.db, 'users', user.uid);
-      await fb.setDoc(ref, { state, updatedAt: Date.now() });
-      showSaveIndicator(true);
-    } catch(e) {
-      console.warn('Firestore save failed:', e);
-    }
-  }, 1200);
+  // Always write to localStorage immediately
+  localStorage.setItem('forza_state', JSON.stringify(state));
+  // Debounce Firestore writes (avoid hammering on rapid input)
+  if (_saveTimeout) clearTimeout(_saveTimeout);
+  showSaveIndicator(false);
+  _saveTimeout = setTimeout(async () => {
+    const fb = window._fb;
+    const user = window._fbUser;
+    
+    // <-- MODIFICATION SUR LA LIGNE CI-DESSOUS (ajout de !isFirestoreLoaded)
+    if (!fb || !user || !isFirestoreLoaded) return; 
+
+    try {
+      const ref = fb.doc(fb.db, 'users', user.uid);
+      // <-- MODIFICATION SUR LA LIGNE CI-DESSOUS (ajout de merge: true)
+      await fb.setDoc(ref, { state, updatedAt: Date.now() }, { merge: true });
+      showSaveIndicator(true);
+    } catch(e) {
+      console.warn('Firestore save failed:', e);
+    }
+  }, 1200);
 }
 
 function showSaveIndicator(saved) {
