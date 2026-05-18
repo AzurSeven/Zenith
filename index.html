@@ -38,16 +38,44 @@ window._fb = { auth, db, provider, doc, getDoc, setDoc, onSnapshot,
 // ── Auth state watcher ──
 onAuthStateChanged(auth, async (user) => {
   if (user) {
-    console.log("Connecté en tant que :", user.email);
-    // On attend que les données soient récupérées avant de faire quoi que ce soit
+    window._fbUser = user;
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('app').style.display = 'flex';
+    // Update profile avatar
+    document.getElementById('profile-avatar-letter').textContent = user.displayName?.[0]?.toUpperCase() || 'A';
+    document.getElementById('profile-google-name').textContent = user.displayName || '';
+    document.getElementById('profile-google-email').textContent = user.email || '';
+    // Auto-set name from Google if not already set by user
+    if (!state.profile.name && user.displayName) {
+      state.profile.name = user.displayName.split(' ')[0];
+    }
+    if (user.photoURL) {
+      document.getElementById('profile-avatar-img').src = user.photoURL;
+      document.getElementById('profile-avatar-img').style.display = 'block';
+      document.getElementById('profile-avatar-letter').style.display = 'none';
+    }
+    // Load data from Firestore
     await window.loadStateFromFirestore();
-    renderAll();
+    // Re-init timers
+    if (state.activeWorkout) {
+      // Restaurer l'état pause depuis Firestore
+      workoutPaused = state.activeWorkout.paused || false;
+      clearInterval(workoutTimerInterval);
+      workoutTimerInterval = setInterval(tickWorkoutTimer, 1000);
+      // Affichage immédiat sans attendre 1 seconde
+      tickWorkoutTimer();
+      document.getElementById('active-session-home').style.display = 'block';
+      const s = state.sessions.find(x => x.id === state.activeWorkout.sessionId);
+      if(s) document.getElementById('home-session-name').textContent = s.name;
+    }
+    renderHome();
+    renderProfile();
   } else {
-    console.log("Utilisateur non connecté");
-    // Optionnel : masquer les données ou rediriger vers login
+    window._fbUser = null;
+    document.getElementById('login-screen').style.display = 'flex';
+    document.getElementById('app').style.display = 'none';
   }
 });
-         
 </script>
 <style>
 :root {
@@ -1398,7 +1426,6 @@ label { font-size: 12px; color: var(--text2); display: block; margin-bottom: 6px
 
 <script>
 // ===== STATE =====
-let isDataLoaded = false; // Empêche d'écraser la base au démarrage
 let state = {
   profile: { name: '', weight: '', maxLoads: [] },
   sessions: [],
@@ -1423,56 +1450,43 @@ function loadState() {
 }
 
 window.loadStateFromFirestore = async function() {
-  const user = auth.currentUser;
-  if (!user) return;
-
+  const fb = window._fb;
+  const user = window._fbUser;
+  if (!fb || !user) return;
   try {
-    // On cherche le document qui porte le nom de l'UID de l'utilisateur
-    const docRef = doc(db, "users", user.uid);
-    const snap = await getDoc(docRef);
-
+    const ref = fb.doc(fb.db, 'users', user.uid);
+    const snap = await fb.getDoc(ref);
     if (snap.exists()) {
       const data = snap.data();
-      console.log("Données trouvées pour l'UID :", user.uid, data);
-      
-      if (data.state) {
-        state = data.state;
-        localStorage.setItem('forza_state', JSON.stringify(state));
-        renderAll(); // On rafraîchit l'affichage avec les nouvelles données
-      }
-    } else {
-      console.warn("Aucun document trouvé pour l'UID :", user.uid);
-      // Si le document n'existe pas encore, on considère que le chargement est "fait" (base vide)
+      state = data.state || state;
+      if (!state.tracker) state.tracker = { goals: { water:2000, steps:10000, sleep:8, calories:2200, weight:null }, daily:{} };
+      // Also cache locally for offline
+      localStorage.setItem('forza_state', JSON.stringify(state));
     }
-    
-    // TRÈS IMPORTANT : On autorise maintenant la sauvegarde
-    isDataLoaded = true; 
-    
-  } catch (e) {
-    console.error("Erreur lors du chargement Firestore :", e);
+  } catch(e) {
+    console.warn('Firestore load failed, using local:', e);
   }
 };
 
-window.saveState = function() {
-  // --- NOUVEAU : On ne sauvegarde pas si on n'a pas encore chargé les données ---
-  if (!isDataLoaded) {
-    console.log("Sauvegarde ignorée : chargement en cours...");
-    return;
-  }
-
+function saveState() {
+  // Always write to localStorage immediately
+  localStorage.setItem('forza_state', JSON.stringify(state));
+  // Debounce Firestore writes (avoid hammering on rapid input)
   if (_saveTimeout) clearTimeout(_saveTimeout);
+  showSaveIndicator(false);
   _saveTimeout = setTimeout(async () => {
-    const user = auth.currentUser;
-    if (!user) return;
-    
+    const fb = window._fb;
+    const user = window._fbUser;
+    if (!fb || !user) return;
     try {
-      await setDoc(doc(db, "users", user.uid), { state });
-      console.log("Base mise à jour avec succès");
-    } catch (e) {
-      console.error("Erreur sauvegarde :", e);
+      const ref = fb.doc(fb.db, 'users', user.uid);
+      await fb.setDoc(ref, { state, updatedAt: Date.now() });
+      showSaveIndicator(true);
+    } catch(e) {
+      console.warn('Firestore save failed:', e);
     }
-  }, 1000);
-};
+  }, 1200);
+}
 
 function showSaveIndicator(saved) {
   const el = document.getElementById('save-indicator');
