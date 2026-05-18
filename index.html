@@ -39,6 +39,7 @@ window._fb = { auth, db, provider, doc, getDoc, setDoc, onSnapshot,
 onAuthStateChanged(auth, async (user) => {
   if (user) {
     window._fbUser = user;
+    window.loadStateFromFirestore();
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('app').style.display = 'flex';
     // Update profile avatar
@@ -1438,7 +1439,11 @@ let state = {
   }
 };
 
+         
 // ===== FIREBASE STATE =====
+// Ajoutez ceci avec vos autres variables globales
+let isDataLoaded = false;
+         
 let _saveTimeout = null;
 
 function loadState() {
@@ -1450,43 +1455,49 @@ function loadState() {
 }
 
 window.loadStateFromFirestore = async function() {
-  const fb = window._fb;
-  const user = window._fbUser;
-  if (!fb || !user) return;
+  const user = auth.currentUser;
+  if (!user) return;
   try {
-    const ref = fb.doc(fb.db, 'users', user.uid);
-    const snap = await fb.getDoc(ref);
+    const docRef = doc(db, "users", user.uid);
+    const snap = await getDoc(docRef);
     if (snap.exists()) {
       const data = snap.data();
-      state = data.state || state;
-      if (!state.tracker) state.tracker = { goals: { water:2000, steps:10000, sleep:8, calories:2200, weight:null }, daily:{} };
-      // Also cache locally for offline
-      localStorage.setItem('forza_state', JSON.stringify(state));
+      if (data.state) {
+        state = data.state;
+        localStorage.setItem('forza_state', JSON.stringify(state));
+        renderAll(); 
+      }
     }
-  } catch(e) {
-    console.warn('Firestore load failed, using local:', e);
+    
+    // --- AJOUTEZ CETTE LIGNE À LA FIN DU TRY ---
+    isDataLoaded = true; 
+    console.log("Chargement réussi, sauvegarde maintenant autorisée.");
+    
+  } catch (e) {
+    console.error("Erreur load:", e);
   }
 };
 
-function saveState() {
-  // Always write to localStorage immediately
-  localStorage.setItem('forza_state', JSON.stringify(state));
-  // Debounce Firestore writes (avoid hammering on rapid input)
+window.saveState = function() {
+  // --- AJOUTEZ CE BLOC ICI ---
+  if (!isDataLoaded) {
+    console.warn("Sauvegarde bloquée : les données Firestore ne sont pas encore chargées.");
+    return;
+  }
+  // ---------------------------
+
   if (_saveTimeout) clearTimeout(_saveTimeout);
-  showSaveIndicator(false);
   _saveTimeout = setTimeout(async () => {
-    const fb = window._fb;
-    const user = window._fbUser;
-    if (!fb || !user) return;
+    const user = auth.currentUser;
+    if (!user) return;
     try {
-      const ref = fb.doc(fb.db, 'users', user.uid);
-      await fb.setDoc(ref, { state, updatedAt: Date.now() });
-      showSaveIndicator(true);
-    } catch(e) {
-      console.warn('Firestore save failed:', e);
+      await setDoc(doc(db, "users", user.uid), { state });
+      console.log("Synchronisé avec Firebase");
+    } catch (e) {
+      console.error("Erreur save:", e);
     }
-  }, 1200);
-}
+  }, 1000);
+};
 
 function showSaveIndicator(saved) {
   const el = document.getElementById('save-indicator');
